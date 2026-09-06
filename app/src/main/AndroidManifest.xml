@@ -5,7 +5,8 @@
     <application
         android:theme="@style/Theme.ReBass"
         android:label="ReBass"
-        android:resizeableActivity="true">
+        android:resizeableActivity="true"
+        android:largeHeap="true">
 
         <activity
             android:name=".MainActivity"

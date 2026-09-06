@@ -1,32 +1,25 @@
-# ReBass
+# ReBass v1.2
 
-A focused Android car-audio **rebass** app that actually works like the popular YouTube rebasses.
+A focused Android car-audio **rebass** app that works like popular YouTube rebasses.
 
-## What it does (proper rebass style)
-
+## What it does
 1. Select any audio file (WAV, MP3, AAC, M4A…).
-2. Choose a target low frequency (15–45 Hz) or **AUTO ÷2**.
+2. Choose a target low frequency (**15–75 Hz**) or **AUTO ÷2**.
 3. The app:
-   - Detects the original bass peaks
-   - **Removes the old low end** (high-pass filter)
+   - Detects original bass peaks
+   - **Removes the old low end** (high-pass)
    - Generates new deep subharmonics that follow the energy of the original bass
-   - Mixes them in cleanly and applies a soft limiter
-4. Exports a clean 16-bit WAV you can share or drop into your car system.
+   - Shows a **before / after bass viewport**
+   - Mixes them in + soft limiter
+4. Exports a clean 16-bit WAV you can share.
 
-This is the same approach used in the classic “rebass” tracks on YouTube: strip the original bass and rebuild it lower and harder for subwoofers.
+Default rebass amount is **100%**.
 
-## UI
-- Clean dark interface
-- Many frequency options (15, 18, 20, 22, 25, 27, 30, 32, 35, 38, 40, 45 Hz + AUTO)
-- Amount slider
-- One-tap share of the finished WAV
+## Crash resistance
+- Processes long files in 8-second chunks
+- Caps bass analysis to ~45 seconds of audio
+- `largeHeap` enabled
+- Catches OutOfMemoryError with a friendly message
 
 ## Build
-Open in Android Studio → Sync Gradle → Run.
-
-GitHub Actions builds a debug APK for **armeabi-v7a** on every push to main.
-
-## Notes
-- Output is always WAV.
-- Processing is offline (whole file).
-- Best results with tracks that already have some low-end content for the detector to lock onto.
+Open in Android Studio → Sync → Run, or use the GitHub Action **Build ReBass APK**.
