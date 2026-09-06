@@ -5,6 +5,8 @@
     <application
         android:theme="@style/Theme.ReBass"
         android:label="ReBass"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:resizeableActivity="true"
         android:largeHeap="true">
 
