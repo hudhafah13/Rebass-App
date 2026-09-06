@@ -9,6 +9,7 @@ import android.graphics.drawable.GradientDrawable
 import android.media.*
 import android.net.Uri
 import android.os.*
+import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.view.*
 import android.widget.*
@@ -19,12 +20,14 @@ class MainActivity : Activity() {
 
     private var uri: Uri? = null
     private var target = 25f
-    private var amount = 100          // default 100%
+    private var amount = 100
     private lateinit var fileLabel: TextView
     private lateinit var status: TextView
     private lateinit var goBtn: Button
+    private lateinit var shareBtn: Button
     private lateinit var viewport: BassViewport
     private var lastOutput: File? = null
+    private var lastDownloadsUri: Uri? = null
     private var isProcessing = false
 
     override fun onCreate(b: Bundle?) {
@@ -64,7 +67,6 @@ class MainActivity : Activity() {
             setPadding(dp(20), dp(28), dp(20), dp(36))
         }
 
-        // Header
         val title = TextView(this).apply {
             text = "REBASS"
             textSize = 32f
@@ -83,13 +85,11 @@ class MainActivity : Activity() {
         }
         root.addView(subtitle)
 
-        // Viewport (before / after bass)
         viewport = BassViewport(this)
         root.addView(viewport, LinearLayout.LayoutParams(-1, dp(210)).apply {
             bottomMargin = dp(16)
         })
 
-        // Select file card
         val pickCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             background = roundedBg(Color.parseColor("#161616"), 16f)
@@ -126,7 +126,6 @@ class MainActivity : Activity() {
             bottomMargin = dp(12)
         })
 
-        // Target frequency
         root.addView(sectionTitle("TARGET LOW FREQUENCY"))
 
         val hzOptions = listOf(
@@ -143,12 +142,11 @@ class MainActivity : Activity() {
                 android.R.layout.simple_spinner_dropdown_item,
                 labels
             ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
-            setSelection(4) // 25 Hz
+            setSelection(4)
             onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
                 override fun onNothingSelected(p: AdapterView<*>?) {}
                 override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
                     target = if (pos == labels.lastIndex) 0f else hzOptions[pos].toFloat()
-                    // live preview of target on viewport
                     if (!isProcessing) {
                         viewport.update(emptyList(), if (target > 0) listOf(target) else emptyList(), target)
                     }
@@ -157,7 +155,6 @@ class MainActivity : Activity() {
         }
         root.addView(hzSpinner, LinearLayout.LayoutParams(-1, dp(48)))
 
-        // Amount
         root.addView(sectionTitle("REBASS AMOUNT"))
 
         val amountLabel = TextView(this).apply {
@@ -184,7 +181,6 @@ class MainActivity : Activity() {
         })
         root.addView(seek)
 
-        // Process button
         goBtn = Button(this).apply {
             text = "REBASS IT"
             textSize = 16f
@@ -199,13 +195,15 @@ class MainActivity : Activity() {
             bottomMargin = dp(10)
         })
 
-        // Share button
-        val shareBtn = Button(this).apply {
+        // Share button - always present, starts disabled/hidden style until ready
+        shareBtn = Button(this).apply {
             text = "SHARE / SAVE WAV"
-            textSize = 14f
+            textSize = 15f
             setTextColor(Color.WHITE)
             background = roundedBg(Color.parseColor("#2A2A2A"), 12f)
-            visibility = View.GONE
+            setPadding(0, dp(14), 0, dp(14))
+            isEnabled = false
+            alpha = 0.4f
             setOnClickListener { shareResult() }
         }
         root.addView(shareBtn, LinearLayout.LayoutParams(-1, -2).apply {
@@ -213,15 +211,13 @@ class MainActivity : Activity() {
         })
 
         status = TextView(this).apply {
-            text = "Select a track  \u2022  Choose Hz  \u2022  Hit REBASS IT\nOriginal bass is removed and replaced with deep subharmonics."
+            text = "Select a track  \u2022  Choose Hz  \u2022  Hit REBASS IT\nWhen done, the file is also saved to Downloads."
             textSize = 12f
             setTextColor(Color.parseColor("#777777"))
             gravity = Gravity.CENTER
             setLineSpacing(0f, 1.25f)
         }
         root.addView(status)
-
-        goBtn.tag = shareBtn
 
         scroll.addView(root)
         setContentView(scroll)
@@ -254,7 +250,8 @@ class MainActivity : Activity() {
             } catch (_: Exception) {}
             status.text = "Ready. Press REBASS IT."
             status.setTextColor(Color.parseColor("#AAAAAA"))
-            (goBtn.tag as? Button)?.visibility = View.GONE
+            shareBtn.isEnabled = false
+            shareBtn.alpha = 0.4f
             viewport.clear()
         }
     }
@@ -269,23 +266,37 @@ class MainActivity : Activity() {
         isProcessing = true
         goBtn.isEnabled = false
         goBtn.text = "PROCESSING\u2026"
+        shareBtn.isEnabled = false
+        shareBtn.alpha = 0.4f
         status.text = "Decoding + detecting bass + removing old lows\u2026\n(large files can take a minute)"
         status.setTextColor(Color.parseColor("#FF6A00"))
 
-        // Use a background thread with higher priority and catch OOM
         val t = Thread {
             try {
                 val result = processAnyAudio(u, target, amount / 100f)
                 lastOutput = result.file
+
+                // Also copy to Downloads so user can find it easily
+                val downloadsUri = saveToDownloads(result.file)
+                lastDownloadsUri = downloadsUri
+
                 runOnUiThread {
                     isProcessing = false
                     goBtn.isEnabled = true
                     goBtn.text = "REBASS IT"
-                    status.text = "Done!\n${result.file.name}\nOriginal bass removed  \u2022  New sub added"
+                    shareBtn.isEnabled = true
+                    shareBtn.alpha = 1f
+                    shareBtn.background = roundedBg(Color.parseColor("#4CAF50"), 12f)
+
+                    val msg = if (downloadsUri != null) {
+                        "Done!\nSaved to Downloads as ${result.file.name}\nTap SHARE / SAVE WAV below"
+                    } else {
+                        "Done!\n${result.file.name}\nTap SHARE / SAVE WAV below"
+                    }
+                    status.text = msg
                     status.setTextColor(Color.parseColor("#4CAF50"))
-                    (goBtn.tag as? Button)?.visibility = View.VISIBLE
                     viewport.update(result.peaks, result.newHz, target)
-                    Toast.makeText(this, "Rebass complete", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "Rebass complete – check Downloads", Toast.LENGTH_LONG).show()
                 }
             } catch (oom: OutOfMemoryError) {
                 runOnUiThread {
@@ -309,10 +320,51 @@ class MainActivity : Activity() {
         t.start()
     }
 
+    /** Save a copy into public Downloads so the user can see it in Files app */
+    private fun saveToDownloads(source: File): Uri? {
+        return try {
+            val name = source.name
+            val values = ContentValues().apply {
+                put(MediaStore.Audio.Media.DISPLAY_NAME, name)
+                put(MediaStore.Audio.Media.MIME_TYPE, "audio/wav")
+                put(MediaStore.Audio.Media.RELATIVE_PATH, "Download/ReBass")
+                put(MediaStore.Audio.Media.IS_PENDING, 1)
+            }
+
+            val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+            } else {
+                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+            }
+
+            val itemUri = contentResolver.insert(collection, values) ?: return null
+
+            contentResolver.openOutputStream(itemUri)?.use { out ->
+                FileInputStream(source).use { input ->
+                    input.copyTo(out)
+                }
+            }
+
+            values.clear()
+            values.put(MediaStore.Audio.Media.IS_PENDING, 0)
+            contentResolver.update(itemUri, values, null, null)
+
+            itemUri
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
+
     private fun shareResult() {
-        val f = lastOutput ?: return
+        val f = lastOutput
+        if (f == null || !f.exists()) {
+            Toast.makeText(this, "No file ready yet", Toast.LENGTH_SHORT).show()
+            return
+        }
         try {
-            val shareUri = FileProvider.getUriForFile(
+            // Prefer the Downloads copy if we have it
+            val shareUri = lastDownloadsUri ?: FileProvider.getUriForFile(
                 this,
                 "$packageName.fileprovider",
                 f
@@ -367,7 +419,6 @@ class MainActivity : Activity() {
     ): InterleavedResult {
         val frames = interleaved.size / channels
 
-        // Build mono for analysis / processing
         val mono = FloatArray(frames)
         for (i in 0 until frames) {
             var s = 0f
@@ -375,8 +426,7 @@ class MainActivity : Activity() {
             mono[i] = s / channels
         }
 
-        // Process in chunks to avoid huge single allocations / GC pressure
-        val chunkFrames = sampleRate * 8   // 8-second chunks
+        val chunkFrames = sampleRate * 8
         val outMono = FloatArray(frames)
         var allPeaks = emptyList<BassPeak>()
         var allNewHz = emptyList<Float>()
@@ -390,12 +440,9 @@ class MainActivity : Activity() {
             if (allPeaks.isEmpty()) allPeaks = result.originalPeaks
             if (allNewHz.isEmpty()) allNewHz = result.newHz
             offset = end
-
-            // gentle GC hint between chunks on very long files
             if (frames > sampleRate * 60) System.gc()
         }
 
-        // Apply the mono delta back to multi-channel (preserves stereo image of mids/highs)
         val out = FloatArray(interleaved.size)
         for (i in 0 until frames) {
             val delta = outMono[i] - mono[i]
