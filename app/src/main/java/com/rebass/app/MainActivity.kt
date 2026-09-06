@@ -1,113 +1,223 @@
 package com.rebass.app
 
 import android.app.*
-import android.os.*
 import android.content.*
 import android.database.Cursor
-import android.net.Uri
-import android.provider.OpenableColumns
 import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.media.*
+import android.net.Uri
+import android.os.*
+import android.provider.OpenableColumns
 import android.view.*
 import android.widget.*
+import androidx.core.content.FileProvider
 import java.io.*
 
 class MainActivity : Activity() {
+
     private var uri: Uri? = null
     private var target = 25f
-    private var amount = 70
+    private var amount = 75
     private lateinit var fileLabel: TextView
     private lateinit var status: TextView
+    private lateinit var goBtn: Button
+    private var lastOutput: File? = null
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        window.statusBarColor = Color.parseColor("#0A0A0A")
+        window.navigationBarColor = Color.parseColor("#0A0A0A")
         buildUi()
     }
 
-    private fun tv(text: String, size: Float, color: Int = Color.LTGRAY): TextView =
-        TextView(this).apply {
-            this.text = text
-            textSize = size
-            setTextColor(color)
-            gravity = Gravity.CENTER
+    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
+
+    private fun roundedBg(color: Int, radius: Float = 16f): GradientDrawable {
+        return GradientDrawable().apply {
+            setColor(color)
+            cornerRadius = radius * resources.displayMetrics.density
         }
+    }
+
+    private fun sectionTitle(text: String): TextView {
+        return TextView(this).apply {
+            this.text = text
+            textSize = 12f
+            setTextColor(Color.parseColor("#888888"))
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            setPadding(0, dp(18), 0, dp(6))
+        }
+    }
 
     private fun buildUi() {
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(28, 36, 28, 28)
-            setBackgroundColor(Color.rgb(9, 9, 9))
+        val scroll = ScrollView(this).apply {
+            setBackgroundColor(Color.parseColor("#0A0A0A"))
         }
 
-        root.addView(tv("REBASS", 36f, Color.WHITE), LinearLayout.LayoutParams(-1, 70))
-        root.addView(
-            tv("LOW-FREQUENCY SUBHARMONIC GENERATOR", 11f, Color.GRAY),
-            LinearLayout.LayoutParams(-1, 35)
-        )
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(24), dp(32), dp(24), dp(40))
+        }
 
-        val pick = Button(this).apply {
-            text = "SELECT AUDIO"
+        // Header
+        val title = TextView(this).apply {
+            text = "REBASS"
+            textSize = 34f
+            setTextColor(Color.WHITE)
+            typeface = Typeface.create("sans-serif-black", Typeface.BOLD)
+            gravity = Gravity.CENTER
+        }
+        root.addView(title)
+
+        val subtitle = TextView(this).apply {
+            text = "Strip the old bass \u2022 Add deep subharmonics"
+            textSize = 13f
+            setTextColor(Color.parseColor("#666666"))
+            gravity = Gravity.CENTER
+            setPadding(0, dp(4), 0, dp(28))
+        }
+        root.addView(subtitle)
+
+        // Select file card
+        val pickCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = roundedBg(Color.parseColor("#161616"), 18f)
+            setPadding(dp(18), dp(18), dp(18), dp(18))
+        }
+
+        val pickBtn = Button(this).apply {
+            text = "SELECT AUDIO FILE"
+            textSize = 15f
+            setTextColor(Color.WHITE)
+            background = roundedBg(Color.parseColor("#FF6A00"), 14f)
+            setPadding(0, dp(14), 0, dp(14))
             setOnClickListener {
                 startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                     type = "audio/*"
                     addCategory(Intent.CATEGORY_OPENABLE)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
                 }, 100)
             }
         }
-        root.addView(pick, LinearLayout.LayoutParams(-1, 58).apply { setMargins(0, 25, 0, 10) })
-        fileLabel = tv("No song selected", 14f)
-        root.addView(fileLabel, LinearLayout.LayoutParams(-1, 45))
+        pickCard.addView(pickBtn, LinearLayout.LayoutParams(-1, -2))
 
-        root.addView(
-            tv("TARGET LOW FREQUENCY", 12f, Color.GRAY),
-            LinearLayout.LayoutParams(-1, 40).apply { setMargins(0, 15, 0, 0) }
+        fileLabel = TextView(this).apply {
+            text = "No file selected"
+            textSize = 14f
+            setTextColor(Color.parseColor("#AAAAAA"))
+            gravity = Gravity.CENTER
+            setPadding(0, dp(14), 0, 0)
+        }
+        pickCard.addView(fileLabel)
+        root.addView(pickCard, LinearLayout.LayoutParams(-1, -2).apply {
+            bottomMargin = dp(20)
+        })
+
+        // Target frequency
+        root.addView(sectionTitle("TARGET LOW FREQUENCY"))
+
+        val hzOptions = listOf(
+            15, 18, 20, 22, 25, 27, 30, 32, 35, 38, 40, 45
         )
-        val hzSpinner = Spinner(this)
-        val labels = (20..40).filter { it % 5 == 0 }.map { "${it} Hz" } + listOf("AUTO ÷2")
-        hzSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, labels)
-        hzSpinner.setSelection(1)
-        hzSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onNothingSelected(p: AdapterView<*>?) {}
-            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
-                target = if (pos == labels.lastIndex) 0f else labels[pos].substringBefore(" ").toFloat()
+        val labels = hzOptions.map { "$it Hz" } + listOf("AUTO \u00f72")
+
+        val hzSpinner = Spinner(this).apply {
+            background = roundedBg(Color.parseColor("#1E1E1E"), 12f)
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, labels).also {
+                it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+            }
+            setSelection(4) // 25 Hz default
+            onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                override fun onNothingSelected(p: AdapterView<*>?) {}
+                override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                    target = if (pos == labels.lastIndex) 0f else hzOptions[pos].toFloat()
+                }
             }
         }
-        root.addView(hzSpinner, LinearLayout.LayoutParams(-1, 52))
+        root.addView(hzSpinner, LinearLayout.LayoutParams(-1, dp(52)))
 
-        val amountLabel = tv("REBASS AMOUNT  $amount%", 12f, Color.GRAY)
-        root.addView(amountLabel, LinearLayout.LayoutParams(-1, 40).apply { setMargins(0, 18, 0, 0) })
+        // Amount
+        root.addView(sectionTitle("REBASS AMOUNT"))
+
+        val amountLabel = TextView(this).apply {
+            text = "$amount%"
+            textSize = 20f
+            setTextColor(Color.parseColor("#FF6A00"))
+            gravity = Gravity.CENTER
+            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+        }
+        root.addView(amountLabel)
+
         val seek = SeekBar(this).apply {
             max = 100
             progress = amount
+            setPadding(dp(8), dp(12), dp(8), dp(12))
         }
         seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(s: SeekBar?, p: Int, f: Boolean) {
                 amount = p
-                amountLabel.text = "REBASS AMOUNT  $amount%"
+                amountLabel.text = "$amount%"
             }
             override fun onStartTrackingTouch(s: SeekBar?) {}
             override fun onStopTrackingTouch(s: SeekBar?) {}
         })
-        root.addView(seek, LinearLayout.LayoutParams(-1, 52))
+        root.addView(seek)
 
-        val go = Button(this).apply {
-            text = "REBASS"
-            textSize = 18f
+        // Process button
+        goBtn = Button(this).apply {
+            text = "REBASS IT"
+            textSize = 17f
+            setTextColor(Color.WHITE)
+            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            background = roundedBg(Color.parseColor("#FF6A00"), 16f)
+            setPadding(0, dp(16), 0, dp(16))
             setOnClickListener { process() }
         }
-        root.addView(go, LinearLayout.LayoutParams(-1, 65).apply { setMargins(0, 25, 0, 8) })
+        root.addView(goBtn, LinearLayout.LayoutParams(-1, -2).apply {
+            topMargin = dp(28)
+            bottomMargin = dp(12)
+        })
 
-        status = tv("Detect bass → generate lower subharmonics → limit → export", 12f, Color.GRAY)
-        root.addView(status, LinearLayout.LayoutParams(-1, 65))
-        setContentView(root)
+        // Share button (hidden until ready)
+        val shareBtn = Button(this).apply {
+            text = "SHARE / SAVE WAV"
+            textSize = 15f
+            setTextColor(Color.WHITE)
+            background = roundedBg(Color.parseColor("#2A2A2A"), 14f)
+            visibility = View.GONE
+            setOnClickListener { shareResult() }
+        }
+        root.addView(shareBtn, LinearLayout.LayoutParams(-1, -2).apply {
+            bottomMargin = dp(16)
+        })
+
+        status = TextView(this).apply {
+            text = "Select a track \u2022 Choose Hz \u2022 Hit REBASS IT\nOriginal bass is removed and replaced with deep subharmonics."
+            textSize = 13f
+            setTextColor(Color.parseColor("#777777"))
+            gravity = Gravity.CENTER
+            setLineSpacing(0f, 1.25f)
+        }
+        root.addView(status)
+
+        // keep reference so we can show share button later
+        goBtn.tag = shareBtn
+
+        scroll.addView(root)
+        setContentView(scroll)
     }
 
     private fun displayName(u: Uri): String {
         var c: Cursor? = null
         return try {
             c = contentResolver.query(u, null, null, null, null)
-            if (c != null && c.moveToFirst()) c.getString(c.getColumnIndexOrThrow(OpenableColumns.DISPLAY_NAME))
-            else "Selected audio"
+            if (c != null && c.moveToFirst()) {
+                c.getString(c.getColumnIndexOrThrow(OpenableColumns.DISPLAY_NAME))
+            } else "Selected audio"
         } catch (_: Exception) {
             "Selected audio"
         } finally {
@@ -123,10 +233,12 @@ class MainActivity : Activity() {
             try {
                 contentResolver.takePersistableUriPermission(
                     uri!!,
-                    data.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
                 )
             } catch (_: Exception) {}
-            status.text = "Ready. Press REBASS."
+            status.text = "Ready. Press REBASS IT."
+            status.setTextColor(Color.parseColor("#AAAAAA"))
+            (goBtn.tag as? Button)?.visibility = View.GONE
         }
     }
 
@@ -135,44 +247,109 @@ class MainActivity : Activity() {
             Toast.makeText(this, "Select a song first", Toast.LENGTH_SHORT).show()
             return
         }
-        status.text = "Decoding + detecting bass…"
+
+        goBtn.isEnabled = false
+        goBtn.text = "PROCESSING\u2026"
+        status.text = "Decoding + detecting bass + removing old lows\u2026"
+        status.setTextColor(Color.parseColor("#FF6A00"))
+
         Thread {
             try {
                 val result = processAnyAudio(u, target, amount / 100f)
+                lastOutput = result
                 runOnUiThread {
-                    status.text = "Done: ${result.name}"
-                    Toast.makeText(this, "Rebass WAV saved in app storage", Toast.LENGTH_LONG).show()
-                    val share = Intent(Intent.ACTION_SEND).apply {
-                        type = "audio/wav"
-                        putExtra(Intent.EXTRA_STREAM, Uri.fromFile(result))
-                    }
+                    goBtn.isEnabled = true
+                    goBtn.text = "REBASS IT"
+                    status.text = "Done!\n${result.name}\nOriginal bass removed \u2022 New sub added"
+                    status.setTextColor(Color.parseColor("#4CAF50"))
+                    (goBtn.tag as? Button)?.visibility = View.VISIBLE
+                    Toast.makeText(this, "Rebass complete", Toast.LENGTH_SHORT).show()
                 }
             } catch (e: Exception) {
-                runOnUiThread { status.text = "Error: ${e.message ?: "processing failed"}" }
+                runOnUiThread {
+                    goBtn.isEnabled = true
+                    goBtn.text = "REBASS IT"
+                    status.text = "Error: ${e.message ?: "processing failed"}"
+                    status.setTextColor(Color.parseColor("#FF5252"))
+                }
             }
         }.start()
     }
+
+    private fun shareResult() {
+        val f = lastOutput ?: return
+        try {
+            val uri = FileProvider.getUriForFile(
+                this,
+                "$packageName.fileprovider",
+                f
+            )
+            val share = Intent(Intent.ACTION_SEND).apply {
+                type = "audio/wav"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(Intent.createChooser(share, "Share ReBass WAV"))
+        } catch (e: Exception) {
+            Toast.makeText(this, "Share failed: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    // ───────── Audio pipeline ─────────
 
     private fun processAnyAudio(u: Uri, target: Float, amount: Float): File {
         val pfd = contentResolver.openFileDescriptor(u, "r")
         val magic = ByteArray(12)
         pfd?.use { FileInputStream(it.fileDescriptor).use { input -> input.read(magic) } }
         val isWav = magic.size >= 12 && String(magic, 0, 4) == "RIFF" && String(magic, 8, 4) == "WAVE"
-        if (isWav) return processWavLike(u, target, amount)
 
-        val decoded = decodeToPcm(u)
-        if (decoded.samples.isEmpty()) error("No audio track found")
-        val processed = FloatArray(decoded.samples.size)
-        val block = (decoded.sampleRate * 2).coerceAtLeast(4096)
-        var off = 0
-        while (off < decoded.samples.size) {
-            val end = minOf(off + block, decoded.samples.size)
-            val part = decoded.samples.copyOfRange(off, end)
-            val p = RebassProcessor.processBlock(part, decoded.sampleRate, target, amount)
-            p.copyInto(processed, off)
-            off = end
+        return if (isWav) processWavLike(u, target, amount)
+        else {
+            val decoded = decodeToPcm(u)
+            if (decoded.samples.isEmpty()) error("No audio track found")
+            val processed = processInterleaved(decoded.samples, decoded.sampleRate, decoded.channels, target, amount)
+            writeWav(processed, decoded.sampleRate, decoded.channels)
         }
-        return writeWav(processed, decoded.sampleRate, decoded.channels)
+    }
+
+    private fun processInterleaved(
+        interleaved: FloatArray,
+        sampleRate: Int,
+        channels: Int,
+        target: Float,
+        amount: Float
+    ): FloatArray {
+        if (channels == 1) {
+            return RebassProcessor.processBlock(interleaved, sampleRate, target, amount)
+        }
+
+        // stereo / multi: process each channel, but detect on mono sum
+        val frames = interleaved.size / channels
+        val mono = FloatArray(frames)
+        for (i in 0 until frames) {
+            var s = 0f
+            for (c in 0 until channels) s += interleaved[i * channels + c]
+            mono[i] = s / channels
+        }
+
+        // we still call processBlock which does detection + highpass + sub
+        // but we need per-channel application of the same sub + highpass
+        // For simplicity and quality we process the mono and then copy the
+        // processing ratio to all channels (keeps stereo image of mids/highs)
+        val monoOut = RebassProcessor.processBlock(mono, sampleRate, target, amount)
+
+        val out = FloatArray(interleaved.size)
+        for (i in 0 until frames) {
+            val originalMono = mono[i]
+            val newMono = monoOut[i]
+            val delta = newMono - originalMono          // the change we applied
+            for (c in 0 until channels) {
+                // high-passed original channel + the sub delta
+                // approximate: apply same relative change
+                out[i * channels + c] = (interleaved[i * channels + c] + delta).coerceIn(-1f, 1f)
+            }
+        }
+        return out
     }
 
     data class PcmResult(val samples: FloatArray, val sampleRate: Int, val channels: Int)
@@ -249,6 +426,7 @@ class MainActivity : Activity() {
         }
 
         val b = pcm.toByteArray()
+        // assume 16-bit PCM from decoder
         val samples = FloatArray(b.size / 2)
         for (i in samples.indices) {
             val lo = b[i * 2].toInt() and 255
@@ -285,6 +463,7 @@ class MainActivity : Activity() {
         put2(34, 16)
         System.arraycopy("data".toByteArray(), 0, h, 36, 4)
         put4(40, data)
+
         val f = File(cacheDir, "ReBass_${System.currentTimeMillis()}.wav")
         FileOutputStream(f).use { out ->
             out.write(h)
@@ -303,10 +482,12 @@ class MainActivity : Activity() {
         input.close()
         if (bytes.size < 44 || String(bytes, 0, 4) != "RIFF" || String(bytes, 8, 4) != "WAVE")
             error("Invalid WAV")
+
         val channels = le16(bytes, 22)
         val rate = le32(bytes, 24)
         val bits = le16(bytes, 34)
-        if (bits != 16) error("Only 16-bit PCM WAV is supported.")
+        if (bits != 16) error("Only 16-bit PCM WAV is supported for direct path.")
+
         var pos = 12
         var dataPos = -1
         var dataLen = 0
@@ -322,9 +503,11 @@ class MainActivity : Activity() {
             pos += len + (len and 1)
         }
         if (dataPos < 0) error("WAV data chunk not found")
+
         val samples = FloatArray(dataLen / 2)
         for (i in samples.indices) samples[i] = le16s(bytes, dataPos + i * 2) / 32768f
-        val processed = RebassProcessor.processBlock(samples, rate, target, amount)
+
+        val processed = processInterleaved(samples, rate, channels, target, amount)
         return writeWav(processed, rate, channels)
     }
 

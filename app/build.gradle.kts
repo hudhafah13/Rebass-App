@@ -11,8 +11,8 @@ android {
         applicationId = "com.rebass.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.0"
+        versionCode = 3
+        versionName = "1.1"
 
         ndk {
             abiFilters.add("armeabi-v7a")
@@ -27,4 +27,8 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+}
+
+dependencies {
+    implementation("androidx.core:core-ktx:1.13.1")
 }
